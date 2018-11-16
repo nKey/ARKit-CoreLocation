@@ -57,6 +57,8 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
     public private(set) var locationNodes = [LocationNode]()
 
     private var sceneLocationEstimates = [SceneLocationEstimate]()
+    
+    private var focusedNode: String? = nil
 
     public private(set) var sceneNode: SCNNode? {
         didSet {
@@ -252,7 +254,18 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
 
         return bestEstimate.translatedLocation(to: position)
     }
-
+    
+    //MARK: - Child Nodes
+    public func updateNodeImage(named: String, with image: UIImage){
+        
+        let plane = SCNPlane(width: image.size.width / 150, height: image.size.height / 150)
+        plane.firstMaterial!.diffuse.contents = image
+        plane.firstMaterial!.lightingModel = .constant
+        plane.firstMaterial?.readsFromDepthBuffer = false
+        plane.cornerRadius = 0.1
+        sceneNode?.childNode(withName: String("child"+named), recursively: true)?.geometry = plane
+    }
+    
     // MARK: - LocationNodes
     ///upon being added, a node's location, locationConfirmed and position may be modified and should not be changed externally.
     public func addLocationNodeForCurrentPosition(locationNode: LocationNode) {
@@ -275,6 +288,58 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
 
         locationNodes.append(locationNode)
         sceneNode.addChildNode(locationNode)
+    }
+    
+    //Updates the node location
+    
+    public func updateNodeLocationData(with tag: String, with location: CLLocation){
+        sceneNode?.childNode(withName: tag, recursively: false)?.position = calculateLocationInScente(location: location)
+//        sceneNode?.renderOnTop()
+    }
+    
+    public func updateLocationNode(with tag:  String, with node: LocationNode){
+//        sceneNode?.position
+        let nodes = findNodes(tagged: tag)
+        let index = locationNodes.firstIndex(of: nodes.first!)
+        locationNodes.remove(at: index!)
+        locationNodes.insert(node, at: index!)
+        sceneNode?.replaceChildNode(nodes.first!, with: node)
+    }
+    
+    // Function to calculate location in scene
+    func calculateLocationInScente(location: CLLocation) -> SCNVector3{
+        let position: SCNVector3
+        guard let currentLocation = currentLocation(),
+            let currentPosition = currentScenePosition() else {
+            return SCNVector3()
+        }
+        let adjustedDistance: CLLocationDistance
+        let distance = currentLocation.distance(from: location)
+        let locationTranslation = currentLocation.transDistance(toLocation: location)
+        if (distance > Double(100)) {
+            //If the item is too far away, bring it closer and scale it down
+            let scale = 100 / Float(distance)
+                
+            adjustedDistance = distance * Double(scale)
+            
+            let adjustedTranslation = SCNVector3(
+            x: Float(locationTranslation.longitudeTranslation) * scale,
+            y: Float(locationTranslation.altitudeTranslation) * scale,
+            z: Float(locationTranslation.latitudeTranslation) * scale)
+        
+            position = SCNVector3(
+            x: currentPosition.x + adjustedTranslation.x,
+            y: currentPosition.y + adjustedTranslation.y,
+            z: currentPosition.z - adjustedTranslation.z)
+        } else {
+            adjustedDistance = distance
+            position = SCNVector3(
+            x: currentPosition.x + Float(locationTranslation.longitudeTranslation),
+            y: currentPosition.y + Float(locationTranslation.altitudeTranslation),
+            z: currentPosition.z - Float(locationTranslation.latitudeTranslation))
+                
+        }
+        return position
     }
 
     ///location not being nil, and locationConfirmed being true are required
@@ -386,7 +451,7 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
         let locationNodeLocation = locationOfLocationNode(locationNode)
 
         // Position is set to a position coordinated via the current position
-        let locationTranslation = currentLocation.translation(toLocation: locationNodeLocation)
+        let locationTranslation = currentLocation.transDistance(toLocation: locationNodeLocation)
         let adjustedDistance: CLLocationDistance
         let distance = locationNodeLocation.distance(from: currentLocation)
 
@@ -439,6 +504,7 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
             if annotationNode.scaleRelativeToDistance {
                 scale = appliedScale.y
                 annotationNode.annotationNode.scale = appliedScale
+//                annotationNode.scale = appliedScale
             } else {
                 //Scale it to be an appropriate size so that it can be seen
                 scale = Float(adjustedDistance) * 0.181
@@ -448,6 +514,7 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
                 }
 
                 annotationNode.annotationNode.scale = SCNVector3(x: scale, y: scale, z: scale)
+//                annotationNode.scale = SCNVector3(x: scale, y: scale, z: scale)
             }
 
             annotationNode.pivot = SCNMatrix4MakeTranslation(0, -1.1 * scale, 0)
@@ -461,6 +528,7 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
     // MARK: - ARSCNViewDelegate
 
     public func renderer(_ renderer: SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+//        sceneNode?.renderOnTop()
         if sceneNode == nil {
             sceneNode = SCNNode()
             scene.rootNode.addChildNode(sceneNode!)
@@ -480,6 +548,27 @@ public class SceneLocationView: ARSCNView, ARSCNViewDelegate {
                 self.addSceneLocationEstimate(location: currentLocation)
             }
         }
+    }
+    
+    public func bringToFront(node: String, order: Int){
+        sceneNode?.childNode(withName: node, recursively: true)?.renderingOrder = order
+    }
+
+    //change Rendering Order
+    public func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        let centerOfView = CGPoint(x: self.frame.size.width/2, y: self.frame.size.height/2)
+        let hits = self.hitTest(centerOfView, options: nil) as [SCNHitTestResult]
+        let hit = hits.first?.node
+        if ( hit != nil && hit?.name == focusedNode ){
+            if ((hit?.renderingOrder)! > 0){
+                bringToFront(node: (hit?.name)!, order: 100)
+            }
+        }else{
+            if( focusedNode != nil){
+                bringToFront(node: focusedNode!, order: 1)
+            }
+        }
+        focusedNode = hit?.name
     }
 
     public func sessionWasInterrupted(_ session: ARSession) {
@@ -524,9 +613,23 @@ extension SceneLocationView: LocationManagerDelegate {
         if accuracy < 0 {
             return
         }
+        
         // heading of 0º means its pointing to the geographic North
         if heading == 0 {
             resetSceneHeading()
+        }
+    }
+}
+
+extension SCNNode {
+    func renderOnTop(){
+        if let geom = self.geometry{
+            for material in geom.materials{
+                material.readsFromDepthBuffer = false
+            }
+        }
+        for child in self.childNodes{
+            child.renderOnTop()
         }
     }
 }

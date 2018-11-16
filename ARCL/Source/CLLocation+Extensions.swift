@@ -31,7 +31,7 @@ public extension CLLocation {
 
     ///Translates distance in meters between two locations.
     ///Returns the result as the distance in latitude and distance in longitude.
-    public func translation(toLocation location: CLLocation) -> LocationTranslation {
+    public func transDistance(toLocation location: CLLocation) -> LocationTranslation {
         let inbetweenLocation = CLLocation(latitude: self.coordinate.latitude, longitude: location.coordinate.longitude)
 
         let distanceLatitude = location.distance(from: inbetweenLocation)

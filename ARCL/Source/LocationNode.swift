@@ -42,7 +42,7 @@ open class LocationNode: SCNNode {
     ///This should only be set to false if you plan to manually update position and scale
     ///at regular intervals. You can do this with `SceneLocationView`'s `updatePositionOfLocationNode`.
     public var continuallyUpdatePositionAndScale = true
-
+    
     public init(location: CLLocation?) {
         self.location = location
         self.locationConfirmed = location != nil
@@ -54,7 +54,9 @@ open class LocationNode: SCNNode {
     }
 }
 
+//Changed LocationAnnotationNode to fit current needs of vehicle info in this project
 open class LocationAnnotationNode: LocationNode {
+
     ///An image to use for the annotation
     ///When viewed from a distance, the annotation will be seen at the size provided
     ///e.g. if the size is 100x100px, the annotation will take up approx 100x100 points on screen.
@@ -71,18 +73,25 @@ open class LocationAnnotationNode: LocationNode {
     ///For landmarks in the distance, the default is correct
     public var scaleRelativeToDistance = false
 
-    public init(location: CLLocation?, image: UIImage) {
+    public init(location: CLLocation?, image: UIImage, id: Int64) {
         self.image = image
 
-        let plane = SCNPlane(width: image.size.width / 100, height: image.size.height / 100)
+        let plane = SCNPlane(width: image.size.width / 150, height: image.size.height / 150)
         plane.firstMaterial!.diffuse.contents = image
         plane.firstMaterial!.lightingModel = .constant
+        plane.firstMaterial?.readsFromDepthBuffer = false
+        plane.firstMaterial?.writesToDepthBuffer = false
+        plane.cornerRadius = 0.1
 
         annotationNode = SCNNode()
         annotationNode.geometry = plane
+        annotationNode.name = String("child"+String(id))
+        
+//        annotationNode.name = String(id)
 
         super.init(location: location)
-
+        tag = String(id)
+        self.name = String(id)
         let billboardConstraint = SCNBillboardConstraint()
         billboardConstraint.freeAxes = SCNBillboardAxis.Y
         constraints = [billboardConstraint]
